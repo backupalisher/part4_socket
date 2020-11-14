@@ -17,9 +17,13 @@ def get_html(ip_address, url_list):
     return html_code
 
 
-def send_device_data(ip_address, url_list, parser_class):
+def send_device_data(ip_address, url_list, parser_class, device_id):
+    print(ip_address, url_list, parser_class, device_id)
     html_code = get_html(ip_address, url_list)
-    sio.emit('html_code', {'html_data': html_code, 'parser_class': parser_class})
+    sio.emit('put', {'client_init': 'parse_init',
+                     'device_id': device_id,
+                     'html_data': html_code,
+                     'parser_class': parser_class})
 
 
 def message_received(event):
@@ -40,6 +44,10 @@ def msg_put(eve):
 def msg_get_put(eve):
     j_data = json.loads(eve)
     if 'getDevices' in j_data['server_init'] and (j_data['company_id'] == COMPANY_ID):
+        send_device_data(j_data['devices'][0]['url'],
+                         j_data['devices'][0]['url_list'],
+                         j_data['devices'][0]['parser_class'],
+                         j_data['devices'][0]['id'])
         print(j_data)
 
 
