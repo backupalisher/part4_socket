@@ -1,10 +1,21 @@
 import socketio
-import gzip
 from requests_html import HTMLSession
 import json
 from env import *
 
-sio = socketio.Client(engineio_logger=True, ssl_verify=False)
+sio = socketio.Client(engineio_logger=False, ssl_verify=False, logger=False)
+
+# Время для проверки соединения с адресатом
+check_timeout = 8
+
+
+def check_ping(ip):
+    session = HTMLSession(verify=False)
+    try:
+        if session.get(ip, timeout=check_timeout):
+            return True
+    except:
+        return False
 
 
 def get_html(ip_address, url_list):
@@ -17,13 +28,17 @@ def get_html(ip_address, url_list):
     return html_code
 
 
-def send_device_data(ip_address, url_list, parser_class, device_id):
-    print(ip_address, url_list, parser_class, device_id)
-    html_code = get_html(ip_address, url_list)
-    sio.emit('put', {'client_init': 'parse_init',
-                     'device_id': device_id,
-                     'html_data': html_code,
-                     'parser_class': parser_class})
+def send_device_data(check_address, ip_address, url_list, parser_class, device_id):
+    if check_address:
+        html_code = get_html(ip_address, url_list)
+        sio.emit('put', json.dumps({'client_init': 'parse_init',
+                                    'device_id': device_id,
+                                    'html_data': html_code,
+                                    'parser_class': parser_class}), namespace='/put')
+    else:
+        sio.emit('put', json.dumps({'device_error': 404,
+                                    'device_id': device_id,
+                                    'error': 'Not connection'}), namespace='/put')
 
 
 def message_received(event):
@@ -44,11 +59,13 @@ def msg_put(eve):
 def msg_get_put(eve):
     j_data = json.loads(eve)
     if 'getDevices' in j_data['server_init'] and (j_data['company_id'] == COMPANY_ID):
-        send_device_data(j_data['devices'][0]['url'],
+        check_address = check_ping(j_data['devices'][0]['url'])
+        send_device_data(check_address,
+                         j_data['devices'][0]['url'],
                          j_data['devices'][0]['url_list'],
                          j_data['devices'][0]['parser_class'],
                          j_data['devices'][0]['id'])
-        print(j_data)
+        # print(j_data)
 
 
 @sio.on('connect', namespace='/put')
