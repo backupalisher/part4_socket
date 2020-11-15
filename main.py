@@ -3,14 +3,16 @@ from requests_html import HTMLSession
 import json
 from env import *
 
-sio = socketio.Client(engineio_logger=False, ssl_verify=False, logger=False)
+
+sio = socketio.Client(engineio_logger=False, ssl_verify=False)
+session = HTMLSession(verify=False)
+session.browser
 
 # Время для проверки соединения с адресатом
 check_timeout = 8
 
 
 def check_ping(ip):
-    session = HTMLSession(verify=False)
     try:
         if session.get(ip, timeout=check_timeout):
             return True
@@ -18,22 +20,25 @@ def check_ping(ip):
         return False
 
 
-def get_html(ip_address, url_list):
-    session = HTMLSession(verify=False)
+def get_html(ip_address, urls_list, device_id):
     html_code = ''
-    for url in url_list:
-        r = session.get(ip_address + url)
+    for url in urls_list.split(','):
+        r = session.get(ip_address + url.strip())
         r.html.render()
+        html_code += ip_address + url.strip()
         html_code += r.html.html
-    return html_code
+
+    html_data = ' '.join(format(ord(x), 'b') for x in html_code)
+    return html_data
 
 
 def send_device_data(check_address, ip_address, url_list, parser_class, device_id):
     if check_address:
-        html_code = get_html(ip_address, url_list)
+        print(check_address, ip_address, url_list, parser_class, device_id)
+        code_data = get_html(ip_address, url_list, device_id)
         sio.emit('put', json.dumps({'client_init': 'parse_init',
                                     'device_id': device_id,
-                                    'html_data': html_code,
+                                    'data': code_data,
                                     'parser_class': parser_class}), namespace='/put')
     else:
         sio.emit('put', json.dumps({'device_error': 404,
@@ -65,7 +70,6 @@ def msg_get_put(eve):
                          j_data['devices'][0]['url_list'],
                          j_data['devices'][0]['parser_class'],
                          j_data['devices'][0]['id'])
-        # print(j_data)
 
 
 @sio.on('connect', namespace='/put')
@@ -82,7 +86,7 @@ if __name__ == '__main__':
     sio.connect('https://socket.api.part4.info:8443/put', namespaces=['/get', '/put'])
     emit_times = 0
     is_emit = True
-    data = '{"getCompany": 32}'
+    data = f'{{"getCompany": {COMPANY_ID}}}'
     while is_emit:
         sio.emit('put', data, namespace='/put', callback=message_received)
         emit_times += 1
