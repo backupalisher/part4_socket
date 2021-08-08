@@ -3,13 +3,35 @@ from requests_html import HTMLSession
 import json
 from env import *
 import datetime
+import urllib3
+
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+import time
+from selenium.webdriver.chrome.options import Options
+
+options = Options()
+options.add_argument("start-maximized")
+options.add_argument("--headless")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-gpu")
+options.add_argument("--ignore-certificate-errors")
+options.add_argument("--disable-extensions")
+options.add_argument("--enable-javascript")
+options.add_argument("--dns-prefetch-disable")
+options.add_argument("--window-size=1366,768")
+options.add_experimental_option("excludeSwitches", ["enable-automation"])
+options.add_experimental_option('useAutomationExtension', False)
+
+driver = webdriver.Chrome(executable_path='chromedriver.exe', chrome_options=options)
 
 sio = socketio.Client(engineio_logger=False, ssl_verify=False)
 session = HTMLSession(verify=False)
 session.browser
 
-# Время для проверки соединения с адресатом
+# Время для проверки соединения с адресатом (sec.)
 check_timeout = 8
+urllib3.disable_warnings()
 
 
 def check_ping(ip):
@@ -23,19 +45,20 @@ def check_ping(ip):
 def get_html(ip_address, urls_list):
     html_code = ''
     for url in urls_list.split(','):
-        r = session.get(ip_address + url.strip())
-        r.html.render()
-        html_code += ip_address + url.strip()
-        html_code += r.html.html
+        driver.get(ip_address + url.strip())
+        WebDriverWait(driver, timeout=1).until(lambda d: d.find_element_by_tag_name("div"))
+        time.sleep(5)
+        html_code += driver.page_source
 
     html_data = ' '.join(format(ord(x), 'b') for x in html_code)
+    # обратно преобразовать в html
+    # ''.join([chr(int(s, 2)) for s in out.split()])
     return html_data
 
 
 def send_device_data(check_address, ip_address, url_list, parser_class, device_id):
     d_time = datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S - ")
     if check_address:
-        # print(f"{check_address}, {ip_address}, {url_list}, {parser_class}, {device_id}")
         code_data = get_html(ip_address, url_list)
 
         sio.emit('put', json.dumps({'client_init': 'parse_init',
@@ -91,7 +114,7 @@ def msg_get_put(eve):
 
 @sio.on('connect', namespace='/put')
 def on_connect():
-    print(datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S - ") + "  Connect...")
+    print(datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S - ") + "  Connected")
 
 
 @sio.on('disconnect', namespace='/put')
@@ -100,13 +123,16 @@ def on_disconnect():
 
 
 def init_socket():
-    sio.connect('https://socket.api.part4.info:8443/put', namespaces=['/get', '/put'])
+    try:
+        sio.connect(URL_CLIENT_ENDPOINT, namespaces=['/get', '/put'])
+    except:
+        pass
     emit_times = 0
     is_emit = True
     data = f'{{"getCompany": {COMPANY_ID}}}'
     while is_emit:
         sio.emit('put', data, namespace='/put', callback=message_received)
         emit_times += 1
-        print('Emit counts  ' + str(emit_times))
+        print(datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S - ") + 'Emit counts  ' + str(emit_times))
         if emit_times > 0:
             is_emit = False

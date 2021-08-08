@@ -1,3 +1,4 @@
+import socket_utils
 from socket_utils import *
 from ui import *
 import sys
